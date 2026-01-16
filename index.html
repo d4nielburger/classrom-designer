@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classroom Designer Pro</title>
+    <style>
+        :root {
+            --bg: #f0f2f5;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; }
+        
+        #toolbar { 
+            background: white; padding: 20px; border-radius: 12px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 20px;
+            display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        /* Clean inputs - no blue highlights */
+        input, button, select { 
+            padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; 
+            outline: none !important; height: 38px; box-sizing: border-box; 
+        }
+        input:focus, select:focus { border-color: #bbb; }
+        
+        button { cursor: pointer; font-weight: 600; transition: 0.2s; background: #fff; }
+        button:hover { background: #f8f9fa; border-color: #bbb; }
+        
+        .btn-primary { background: #333; color: white; border: none; }
+        .btn-primary:hover { background: #000; }
+        .btn-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+
+        /* The Custom Color Pickers */
+        .palette-dropdown {
+            width: 50px; cursor: pointer; font-weight: bold;
+            text-align: center; appearance: none;
+        }
+
+        /* Classroom Setup */
+        #classroom-container {
+            position: relative; background: white; border: 2px solid #333;
+            border-radius: 8px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        #grid-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: grid; pointer-events: none; z-index: 1;
+        }
+        .grid-cell { border: 0.5px solid #f0f0f0; }
+        #classroom { position: relative; width: 100%; height: 600px; z-index: 2; }
+
+        /* The Desk Card */
+        .desk { 
+            position: absolute; color: white; border-radius: 8px; cursor: move; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15); z-index: 10;
+            border: 2px solid rgba(0,0,0,0.1); box-sizing: border-box;
+        }
+
+        .name-edit {
+            background: rgba(255,255,255,0.2); border: none; color: white;
+            text-align: center; width: 85%; font-weight: bold;
+            border-radius: 4px; padding: 2px; font-size: 13px; outline: none;
+        }
+
+        .desk-controls {
+            position: absolute; top: 4px; right: 4px; left: 4px;
+            display: flex; justify-content: space-between; opacity: 0; transition: 0.2s;
+        }
+        .desk:hover .desk-controls { opacity: 1; }
+
+        .desk-btn {
+            background: rgba(0,0,0,0.3); border: none; color: white;
+            width: 20px; height: 20px; border-radius: 4px;
+            cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center;
+            appearance: none; text-align: center;
+        }
+        .desk-btn:hover { background: rgba(0,0,0,0.6); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="toolbar">
+        <div class="control-group">
+            <label>Card Color</label>
+            <select id="globalColor" class="palette-dropdown" onchange="this.style.backgroundColor = this.value">
+                </select>
+        </div>
+
+        <div class="control-group">
+            <label>Student Name</label>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="newName" placeholder="Enter name..." onkeydown="if(event.key==='Enter') addStudent()">
+                <button class="btn-primary" onclick="addStudent()">Add Student</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Grid Size</label>
+            <div style="display:flex; gap:5px;">
+                <input type="number" id="colsInput" value="8" min="2" style="width:55px">
+                <input type="number" id="rowsInput" value="6" min="2" style="width:55px">
+            </div>
+        </div>
+
+        <div style="flex-grow: 1;"></div>
+
+        <div class="control-group">
+            <label>Actions</label>
+            <div style="display:flex; gap:5px;">
+                <button onclick="exportToJson()">Export JSON</button>
+                <button onclick="document.getElementById('importFile').click()">Import JSON</button>
+                <button class="btn-danger" onclick="clearAll()">Clear All</button>
+                <input type="file" id="importFile" hidden accept=".json">
+            </div>
+        </div>
+    </div>
+
+    <div id="classroom-container">
+        <div id="grid-overlay"></div>
+        <div id="classroom"></div>
+    </div>
+</div>
+
+<script>
+    const classroom = document.getElementById('classroom');
+    const overlay = document.getElementById('grid-overlay');
+    const colsInput = document.getElementById('colsInput');
+    const rowsInput = document.getElementById('rowsInput');
+    const globalColorPicker = document.getElementById('globalColor');
+
+    let students = []; 
+    let config = { cols: 8, rows: 6 };
+
+    const palette = [
+        { hex: "#8d6e63", label: "■" }, 
+        { hex: "#2563eb", label: "■" }, 
+        { hex: "#16a34a", label: "■" }, 
+        { hex: "#d97706", label: "■" }, 
+        { hex: "#7c3aed", label: "■" }, 
+        { hex: "#db2777", label: "■" },
+        { hex: "#374151", label: "■" }
+    ];
+
+    window.onload = () => {
+        // Build the global color picker
+        palette.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.hex;
+            opt.textContent = p.label;
+            opt.style.backgroundColor = p.hex;
+            opt.style.color = "white";
+            globalColorPicker.appendChild(opt);
+        });
+        globalColorPicker.style.backgroundColor = palette[0].hex;
+        globalColorPicker.style.color = "white";
+
+        const saved = localStorage.getItem('classroom_v3');
+        if (saved) {
+            const data = JSON.parse(saved);
+            config = data.config;
+            students = data.students;
+            colsInput.value = config.cols;
+            rowsInput.value = config.rows;
+        }
+        refreshUI();
+    };
+
+    function refreshUI() {
+        renderGrid();
+        renderDesks();
+        saveToLocal();
+    }
+
+    function renderGrid() {
+        config.cols = parseInt(colsInput.value) || 8;
+        config.rows = parseInt(rowsInput.value) || 6;
+        overlay.style.gridTemplateColumns = `repeat(${config.cols}, 1fr)`;
+        overlay.style.gridTemplateRows = `repeat(${config.rows}, 1fr)`;
+        overlay.innerHTML = Array(config.cols * config.rows).fill('<div class="grid-cell"></div>').join('');
+    }
+
+    function addStudent() {
+        const input = document.getElementById('newName');
+        if (!input.value.trim()) return;
+        
+        students.push({
+            id: Date.now() + Math.random(), // Unique ID
+            name: input.value,
+            color: globalColorPicker.value,
+            col: 0,
+            row: 0
+        });
+        input.value = '';
+        refreshUI();
+    }
+
+    function renderDesks() {
+        classroom.innerHTML = '';
+        const cellW = classroom.offsetWidth / config.cols;
+        const cellH = classroom.offsetHeight / config.rows;
+
+        students.forEach((s) => {
+            const el = document.createElement('div');
+            el.className = 'desk';
+            el.style.backgroundColor = s.color;
+            el.style.width = (cellW - 10) + 'px';
+            el.style.height = (cellH - 10) + 'px';
+            el.style.left = (s.col * cellW + 5) + 'px';
+            el.style.top = (s.row * cellH + 5) + 'px';
+
+            const controls = document.createElement('div');
+            controls.className = 'desk-controls';
+            
+            // Per-card color picker
+            const colorSel = document.createElement('select');
+            colorSel.className = 'desk-btn';
+            palette.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.hex;
+                opt.textContent = p.label;
+                opt.style.backgroundColor = p.hex;
+                colorSel.appendChild(opt);
+            });
+            colorSel.value = s.color;
+            colorSel.onchange = (e) => { 
+                s.color = e.target.value; 
+                el.style.backgroundColor = s.color; 
+                saveToLocal(); 
+            };
+            colorSel.onmousedown = (e) => e.stopPropagation();
+
+            // FIX: Delete button logic
+            const delBtn = document.createElement('button');
+            delBtn.className = 'desk-btn';
+            delBtn.innerHTML = '✕';
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                students = students.filter(student => student.id !== s.id);
+                refreshUI();
+            };
+            delBtn.onmousedown = (e) => e.stopPropagation();
+
+            controls.appendChild(colorSel);
+            controls.appendChild(delBtn);
+
+            const nameInput = document.createElement('input');
+            nameInput.className = 'name-edit';
+            nameInput.value = s.name;
+            nameInput.onchange = (e) => { s.name = e.target.value; saveToLocal(); };
+            nameInput.onmousedown = (e) => e.stopPropagation(); 
+
+            el.appendChild(controls);
+            el.appendChild(nameInput);
+            makeDraggable(el, s, cellW, cellH);
+            classroom.appendChild(el);
+        });
+    }
+
+    function makeDraggable(el, studentObj, cellW, cellH) {
+        el.onmousedown = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+            
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const origX = el.offsetLeft;
+            const origY = el.offsetTop;
+            
+            document.onmousemove = (e) => {
+                el.style.left = (origX + (e.clientX - startX)) + "px";
+                el.style.top = (origY + (e.clientY - startY)) + "px";
+                el.style.zIndex = 1000;
+            };
+
+            document.onmouseup = () => {
+                document.onmousemove = null;
+                document.onmouseup = null;
+                let col = Math.round((el.offsetLeft) / cellW);
+                let row = Math.round((el.offsetTop) / cellH);
+                studentObj.col = Math.max(0, Math.min(col, config.cols - 1));
+                studentObj.row = Math.max(0, Math.min(row, config.rows - 1));
+                refreshUI();
+            };
+        };
+    }
+
+    function exportToJson() {
+        const data = { config, students };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `classroom_layout.json`;
+        a.click();
+    }
+
+    document.getElementById('importFile').onchange = (e) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const data = JSON.parse(ev.target.result);
+            config = data.config; students = data.students;
+            colsInput.value = config.cols; rowsInput.value = config.rows;
+            refreshUI();
+        };
+        reader.readAsText(e.target.files[0]);
+    };
+
+    function saveToLocal() {
+        localStorage.setItem('classroom_v3', JSON.stringify({ config, students }));
+    }
+
+    function clearAll() {
+        if (confirm("Clear the entire classroom?")) {
+            students = [];
+            refreshUI();
+        }
+    }
+
+    window.onresize = refreshUI;
+    [colsInput, rowsInput].forEach(i => i.onchange = refreshUI);
+</script>
+
+</body>
+</html>
